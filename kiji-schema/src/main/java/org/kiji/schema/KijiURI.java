@@ -97,12 +97,39 @@ public final class KijiURI {
   private final ImmutableList<KijiColumnName> mColumnNamesNormalized;
 
   /**
+   * Constructs a new KijiURI with the given parameters.
+   *
+   * @param zookeeperQuorum Zookeeper quorum.
+   * @param zookeeperClientPort Zookeeper client port.
+   * @param instanceName Instance name.
+   * @param tableName Table name.
+   * @param columnNames Column names.
+   * @throws KijiURIException If the parameters are invalid.
+   */
+  private KijiURI(
+      Iterable<String> zookeeperQuorum,
+      int zookeeperClientPort,
+      String instanceName,
+      String tableName,
+      Iterable<KijiColumnName> columnNames) throws KijiURIException {
+    mZookeeperQuorum = ImmutableList.copyOf(zookeeperQuorum);
+    mZookeeperQuorumNormalized = ImmutableSortedSet.copyOf(mZookeeperQuorum).asList();
+    mZookeeperClientPort = zookeeperClientPort;
+    mInstanceName =
+        ((null == instanceName) || !instanceName.equals(UNSET_URI_STRING)) ? instanceName : null;
+    mTableName = ((null == tableName) || !tableName.equals(UNSET_URI_STRING)) ? tableName : null;
+    mColumnNames = ImmutableList.copyOf(columnNames);
+    mColumnNamesNormalized = ImmutableSortedSet.copyOf(mColumnNames).asList();
+    validateNames();
+  }
+
+  /**
    * Constructs a URI that fully qualifies a Kiji table.
    *
    * @param uri Kiji URI
    * @throws KijiURIException if the URI is invalid.
    */
-  public KijiURI(URI uri) throws KijiURIException {
+  private KijiURI(URI uri) throws KijiURIException {
     if (!uri.getScheme().equals(KIJI_SCHEME)) {
       throw new KijiURIException(uri.toString(), "URI scheme must be '" + KIJI_SCHEME + "'");
     }
@@ -146,48 +173,6 @@ public final class KijiURI {
     mColumnNames = builder.build();
     mColumnNamesNormalized = ImmutableSortedSet.copyOf(mColumnNames).asList();
 
-    validateNames();
-  }
-
-  /**
-   * Constructs a fully qualified Kiji table URI from a string.
-   *
-   * @param uri Kiji URI
-   * @return A KijiURI represented by uri.
-   * @throws KijiURIException if the URI is invalid.
-   */
-  public static KijiURI parse(String uri) throws KijiURIException {
-    try {
-      return new KijiURI(new URI(uri));
-    } catch (URISyntaxException exn) {
-      throw new KijiURIException(uri, exn.getMessage());
-    }
-  }
-
-  /**
-   * Constructs a new KijiURI with the given parameters.
-   *
-   * @param zookeeperQuorum Zookeeper quorum.
-   * @param zookeeperClientPort Zookeeper client port.
-   * @param instanceName Instance name.
-   * @param tableName Table name.
-   * @param columnNames Column names.
-   * @throws KijiURIException If the parameters are invalid.
-   */
-  public KijiURI(
-      Iterable<String> zookeeperQuorum,
-      int zookeeperClientPort,
-      String instanceName,
-      String tableName,
-      Iterable<KijiColumnName> columnNames) throws KijiURIException {
-    mZookeeperQuorum = ImmutableList.copyOf(zookeeperQuorum);
-    mZookeeperQuorumNormalized = ImmutableSortedSet.copyOf(mZookeeperQuorum).asList();
-    mZookeeperClientPort = zookeeperClientPort;
-    mInstanceName =
-        ((null == instanceName) || !instanceName.equals(UNSET_URI_STRING)) ? instanceName : null;
-    mTableName = ((null == tableName) || !tableName.equals(UNSET_URI_STRING)) ? tableName : null;
-    mColumnNames = ImmutableList.copyOf(columnNames);
-    mColumnNamesNormalized = ImmutableSortedSet.copyOf(mColumnNames).asList();
     validateNames();
   }
 
@@ -276,6 +261,210 @@ public final class KijiURI {
   }
 
   /**
+   * Constructs a fully qualified Kiji table URI from a string.
+   *
+   * @param uri Kiji URI
+   * @return A KijiURI represented by uri.
+   * @throws KijiURIException if the URI is invalid.
+   */
+  public static KijiURI parse(String uri) throws KijiURIException {
+    try {
+      return new KijiURI(new URI(uri));
+    } catch (URISyntaxException exn) {
+      throw new KijiURIException(uri, exn.getMessage());
+    }
+  }
+
+  /**
+   * Constructs a new KijiURI from an existing URI.
+   *
+   * @param uri The existing URI.
+   * @return The new Kiji URI.
+   * @throws KijiURIException If the URI is an invalid Kiji URI.
+   */
+  public static KijiURI fromURI(URI uri) throws KijiURIException {
+    return new KijiURI(uri);
+  }
+
+  /**
+   * Builder class for constructing KijiURIs.
+   */
+  public static final class KijiURIBuilder {
+    /**
+     * Zookeeper quorum: comma-separated list of Zookeeper host names or IP addresses.
+     * Preserves user ordering.
+     */
+    private ImmutableList<String> mZookeeperQuorum;
+
+    /** Zookeeper client port number. */
+    private int mZookeeperClientPort;
+
+    /** Kiji instance name. Null means unset. */
+    private String mInstanceName;
+
+    /** Kiji table name. Null means unset. */
+    private String mTableName;
+
+    /** Kiji column names. Never null. Empty means unset. Preserves user ordering. */
+    private ImmutableList<KijiColumnName> mColumnNames;
+
+    /**
+     * Constructs a new builder for KijiURIs.
+     *
+     * @param zookeeperQuorum The initial zookeeper quorum.
+     * @param zookeeperClientPort The initial zookeeper client port.
+     * @param instanceName The initial instance name.
+     * @param tableName The initial table name.
+     * @param columnNames The initial column names.
+     */
+    private KijiURIBuilder(
+        Iterable<String> zookeeperQuorum,
+        int zookeeperClientPort,
+        String instanceName,
+        String tableName,
+        Iterable<KijiColumnName> columnNames) {
+      mZookeeperQuorum = ImmutableList.copyOf(zookeeperQuorum);
+      mZookeeperClientPort = zookeeperClientPort;
+      mInstanceName =
+          ((null == instanceName) || !instanceName.equals(UNSET_URI_STRING)) ? instanceName : null;
+      mTableName = ((null == tableName) || !tableName.equals(UNSET_URI_STRING)) ? tableName : null;
+      mColumnNames = ImmutableList.copyOf(columnNames);
+    }
+
+    /**
+     * Constructs a new builder for KijiURIs with default values.
+     */
+    private KijiURIBuilder() {
+      ImmutableList.Builder<String> quorumBuilder = ImmutableList.builder();
+      mZookeeperQuorum = quorumBuilder.build();
+      mZookeeperClientPort = DEFAULT_ZOOKEEPER_CLIENT_PORT;
+      mInstanceName = UNSET_URI_STRING;
+      mTableName = UNSET_URI_STRING;
+      ImmutableList.Builder<KijiColumnName> columnBuilder = ImmutableList.builder();
+      mColumnNames = columnBuilder.build();
+    }
+
+    /**
+     * Constructs a new builder for KijiURIs with default values.
+     *
+     * @return A new builder for Kiji URIs.
+     */
+    public static KijiURIBuilder create() {
+      return new KijiURIBuilder();
+    }
+
+    /**
+     * Constructs a new builder for KijiURIs from an existing KijiURI.
+     *
+     * @param kijiURI The base KijiURI.
+     * @return A new builder for Kiji URIs.
+     */
+    public static KijiURIBuilder createFromKijiURI(KijiURI kijiURI) {
+      return new KijiURIBuilder(
+          kijiURI.getZookeeperQuorum(),
+          kijiURI.getZookeeperClientPort(),
+          kijiURI.getInstance(),
+          kijiURI.getTable(),
+          kijiURI.getColumns());
+    }
+
+    /**
+     * Configures the KijiURI with Zookeeper Quorum.
+     *
+     * @param zookeeperQuorum The zookeeper quorum.
+     * @return This builder instance so you may chain configuration method calls.
+     */
+    public KijiURIBuilder withZookeeperQuorum(String[] zookeeperQuorum) {
+      mZookeeperQuorum = ImmutableList.copyOf(zookeeperQuorum);
+      return this;
+    }
+
+    /**
+     * Configures the KijiURI with the Zookeeper client port.
+     *
+     * @param clientPort The port.
+     * @return This builder instance so you may chain configuration method calls.
+     */
+    public KijiURIBuilder withClientPort(int clientPort) {
+      mZookeeperClientPort = clientPort;
+      return this;
+    }
+
+    /**
+     * Configures the KijiURI with the Kiji instance name.
+     *
+     * @param instanceName The Kiji instance name.
+     * @return This builder instance so you may chain configuration method calls.
+     * @throws KijiURIException if the instance name is invalid.
+     */
+    public KijiURIBuilder withInstanceName(String instanceName) throws KijiURIException {
+      if ((instanceName != null) && !KijiNameValidator.isValidKijiName(instanceName)) {
+        throw new KijiURIException(String.format(
+            "Invalid Kiji URI: '%s' is not a valid Kiji instance name.", instanceName));
+      }
+      mInstanceName = instanceName;
+      return this;
+    }
+
+    /**
+     * Configures the KijiURI with the Kiji table name.
+     *
+     * @param tableName The Kiji table name.
+     * @return This builder instance so you may chain configuration method calls.
+     * @throws KijiURIException if the table name is invalid.
+     */
+    public KijiURIBuilder withTableName(String tableName) throws KijiURIException {
+      if ((tableName != null) && !KijiNameValidator.isValidLayoutName(tableName)) {
+        throw new KijiURIException(String.format(
+            "Invalid Kiji URI: '%s' is not a valid Kiji table name.", tableName));
+      }
+      mTableName = tableName;
+      return this;
+    }
+
+    /**
+     * Configures the KijiURI with the Kiji column names.
+     *
+     * @param columnNames The Kiji column names.
+     * @return This builder instance so you may chain configuration method calls.
+     */
+    public KijiURIBuilder withColumnNames(Collection<String> columnNames) {
+      ImmutableList.Builder<KijiColumnName> builder = ImmutableList.builder();
+      for (String column : columnNames) {
+        builder.add(new KijiColumnName(column));
+      }
+      mColumnNames = builder.build();
+      return this;
+    }
+
+    /**
+     * Configures the KijiURI with the Kiji column names.
+     *
+     * @param columnNames The Kiji column names.
+     * @return This builder instance so you may chain configuration method calls.
+     */
+    public KijiURIBuilder withColumnNames(Iterable<KijiColumnName> columnNames) {
+      mColumnNames = ImmutableList.copyOf(columnNames);
+      return this;
+    }
+
+    /**
+     * Builds the configured KijiURI.
+     *
+     * @return A KijiURI.
+     * @throws KijiURIException If the KijiURI was configured improperly.
+     */
+    public KijiURI build() throws KijiURIException {
+      return new KijiURI(
+          mZookeeperQuorum,
+          mZookeeperClientPort,
+          mInstanceName,
+          mTableName,
+          mColumnNames);
+    }
+  }
+
+  /**
    * Resolve the path relative to this KijiURI. Returns a new instance.
    *
    * @param path The path to resolve.
@@ -319,83 +508,13 @@ public final class KijiURI {
   }
 
   /** @return Kiji columns (comma-separated list of Kiji column names), normalized. */
-  public ImmutableList<KijiColumnName> getColumn() {
+  public ImmutableList<KijiColumnName> getColumns() {
     return mColumnNamesNormalized;
   }
 
   /** @return Kiji columns (comma-separated list of Kiji column names), ordered. */
-  public Collection<KijiColumnName> getColumnOrdered() {
+  public Collection<KijiColumnName> getColumnsOrdered() {
     return mColumnNames;
-  }
-
-  /**
-   * Creates a new KijiURI with this zookeeper quorum.
-   *
-   * @param quorum The value to set zookeeperQuorum to.
-   * @return A copy of this KijiURI with the zookeeperQuorum set.
-   * @throws KijiURIException If the quorum is invalid.
-   */
-  public KijiURI setZookeeperQuorum(String[] quorum) throws KijiURIException {
-    return new KijiURI(
-        ImmutableList.copyOf(quorum),
-        mZookeeperClientPort,
-        mInstanceName,
-        mTableName,
-        mColumnNames
-    );
-  }
-
-  /**
-   * Creates a new KijiURI with this instance name added.
-   *
-   * @param instanceName The name to set the instance name to.
-   * @return A copy of this KijiURI with the instance name set.
-   * @throws KijiURIException If instanceName is invalid.
-   */
-  public KijiURI setInstanceName(String instanceName) throws
-      KijiURIException {
-    return new KijiURI(
-        mZookeeperQuorum, mZookeeperClientPort,
-        instanceName,
-        mTableName,
-        mColumnNames
-    );
-  }
-
-  /**
-   * Creates a KijiURI with this table name added.
-   *
-   * @param tableName The name to set the table name to.
-   * @return A copy of this KijiURI with the table name set.
-   * @throws KijiURIException If tableName is invalid.
-   */
-  public KijiURI setTableName(String tableName) throws KijiURIException {
-    return new KijiURI(
-        mZookeeperQuorum, mZookeeperClientPort,
-        mInstanceName,
-        tableName,
-        mColumnNames
-    );
-  }
-
-  /**
-   * Creates a KijiURI with these column names added.
-   *
-   * @param columnNames The column names to set as (col1,col2).
-   * @return A copy of this KijiURI with the column names set.
-   * @throws KijiURIException If columNames is invalid.
-   */
-  public KijiURI setColumnNames(Collection<String> columnNames) throws KijiURIException {
-    ImmutableList.Builder<KijiColumnName> builder = ImmutableList.builder();
-    for (String column : columnNames) {
-      builder.add(new KijiColumnName(column));
-    }
-    return new KijiURI(
-        mZookeeperQuorum, mZookeeperClientPort,
-        mInstanceName,
-        mTableName,
-        builder.build()
-    );
   }
 
   /** {@inheritDoc} */

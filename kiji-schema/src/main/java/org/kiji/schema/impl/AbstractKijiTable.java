@@ -29,6 +29,7 @@ import org.kiji.schema.EntityId;
 import org.kiji.schema.Kiji;
 import org.kiji.schema.KijiTable;
 import org.kiji.schema.KijiURI;
+import org.kiji.schema.KijiURI.KijiURIBuilder;
 import org.kiji.schema.util.Debug;
 
 /**
@@ -69,7 +70,8 @@ public abstract class AbstractKijiTable implements KijiTable {
   protected AbstractKijiTable(Kiji kiji, String name) throws IOException {
     mKiji = kiji;
     mName = name;
-    mTableURI = mKiji.getURI().setTableName(mName);
+    mTableURI =
+        KijiURIBuilder.createFromKijiURI(mKiji.getURI()).withTableName(mName).build();
     mIsOpen = true;
     if (CLEANUP_LOG.isDebugEnabled()) {
       mConstructorStack = Debug.getStackTrace();

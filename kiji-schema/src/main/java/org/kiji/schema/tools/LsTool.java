@@ -56,6 +56,7 @@ import org.kiji.schema.KijiTable;
 import org.kiji.schema.KijiTableReader;
 import org.kiji.schema.KijiTableReader.KijiScannerOptions;
 import org.kiji.schema.KijiURI;
+import org.kiji.schema.KijiURI.KijiURIBuilder;
 import org.kiji.schema.avro.SchemaType;
 import org.kiji.schema.layout.KijiTableLayout;
 import org.kiji.schema.layout.KijiTableLayout.LocalityGroupLayout.FamilyLayout;
@@ -414,7 +415,7 @@ public final class LsTool extends VersionValidatedTool {
       return listTables();
     }
 
-    setURI(getURI().setTableName(mTableName));
+    setURI(KijiURIBuilder.createFromKijiURI(getURI()).withTableName(mTableName).build());
 
     // else, list row(s) from this specific table.
     final KijiTableLayout tableLayout = metaTable.getTableLayout(mTableName);
