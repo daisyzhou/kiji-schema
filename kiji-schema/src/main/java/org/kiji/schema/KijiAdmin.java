@@ -36,6 +36,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import org.kiji.annotations.ApiAudience;
+import org.kiji.schema.KijiURI.KijiURIBuilder;
 import org.kiji.schema.avro.RowKeyEncoding;
 import org.kiji.schema.avro.TableLayoutDesc;
 import org.kiji.schema.impl.HTableDescriptorComparator;
@@ -158,7 +159,9 @@ public final class KijiAdmin implements Closeable {
       if (isRestore) {
         LOG.info("Table already exists in HBase. Continuing with restore operation.");
       } else {
-        final KijiURI tableURI = mKiji.getURI().setTableName(tableName);
+        final KijiURI tableURI =
+            KijiURIBuilder.createFromKijiURI(mKiji.getURI())
+            .withTableName(tableName).build();
         throw new KijiAlreadyExistsException(String.format(
             "Kiji table '%s' already exists.", tableURI), tableURI);
       }
