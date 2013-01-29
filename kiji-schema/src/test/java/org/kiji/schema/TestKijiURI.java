@@ -23,6 +23,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Arrays;
 
 import org.junit.Test;
@@ -30,6 +32,12 @@ import org.junit.Test;
 import org.kiji.schema.KijiURI.KijiURIBuilder;
 
 public class TestKijiURI {
+  @Test
+  public void testFromURI() throws KijiURIException, URISyntaxException {
+    final KijiURI uri = KijiURI.parse("kiji://zkhost:1234");
+    assertEquals(uri, KijiURI.fromURI(new URI(uri.toString())));
+  }
+
   @Test
   public void testHbaseUri() throws KijiURIException {
     final KijiURI uri = KijiURI.parse("kiji://zkhost:1234");

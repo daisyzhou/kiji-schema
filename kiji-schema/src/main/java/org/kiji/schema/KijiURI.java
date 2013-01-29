@@ -97,6 +97,170 @@ public final class KijiURI {
   private final ImmutableList<KijiColumnName> mColumnNamesNormalized;
 
   /**
+   * Constructs a new KijiURI with the given parameters.
+   *
+   * @param zookeeperQuorum Zookeeper quorum.
+   * @param zookeeperClientPort Zookeeper client port.
+   * @param instanceName Instance name.
+   * @param tableName Table name.
+   * @param columnNames Column names.
+   * @throws KijiURIException If the parameters are invalid.
+   */
+  private KijiURI(
+      Iterable<String> zookeeperQuorum,
+      int zookeeperClientPort,
+      String instanceName,
+      String tableName,
+      Iterable<KijiColumnName> columnNames) throws KijiURIException {
+    mZookeeperQuorum = ImmutableList.copyOf(zookeeperQuorum);
+    mZookeeperQuorumNormalized = ImmutableSortedSet.copyOf(mZookeeperQuorum).asList();
+    mZookeeperClientPort = zookeeperClientPort;
+    mInstanceName =
+        ((null == instanceName) || !instanceName.equals(UNSET_URI_STRING)) ? instanceName : null;
+    mTableName = ((null == tableName) || !tableName.equals(UNSET_URI_STRING)) ? tableName : null;
+    mColumnNames = ImmutableList.copyOf(columnNames);
+    mColumnNamesNormalized = ImmutableSortedSet.copyOf(mColumnNames).asList();
+    validateNames();
+  }
+
+  /**
+   * Constructs a URI that fully qualifies a Kiji table.
+   *
+   * @param uri Kiji URI
+   * @throws KijiURIException if the URI is invalid.
+   */
+  private KijiURI(URI uri) throws KijiURIException {
+    if (!uri.getScheme().equals(KIJI_SCHEME)) {
+      throw new KijiURIException(uri.toString(), "URI scheme must be '" + KIJI_SCHEME + "'");
+    }
+
+    final AuthorityParser parser = new AuthorityParser(uri.getAuthority());
+    mZookeeperQuorum = parser.getZookeeperQuorum();
+    mZookeeperQuorumNormalized = ImmutableSortedSet.copyOf(mZookeeperQuorum).asList();
+    mZookeeperClientPort = parser.getZookeeperClientPort();
+
+    final String[] path = new File(uri.getPath()).toString().split("/");
+    if (path.length > 4) {
+      throw new KijiURIException(uri.toString(),
+          "Invalid path, expecting '/kiji-instance/table-name/(column1, column2, ...)'");
+    }
+    Preconditions.checkState((path.length == 0) || path[0].isEmpty());
+
+    // Instance name:
+    if (path.length >= 2) {
+      mInstanceName = (path[1].equals(UNSET_URI_STRING)) ? null: path[1];
+    } else {
+      mInstanceName = null;
+    }
+
+    // Table name:
+    if (path.length >= 3) {
+      mTableName = (path[2].equals(UNSET_URI_STRING)) ? null : path[2];
+    } else {
+      mTableName = null;
+    }
+
+    // Columns:
+    final ImmutableList.Builder<KijiColumnName> builder = ImmutableList.builder();
+    if (path.length >= 4) {
+      if (!path[3].equals(UNSET_URI_STRING)) {
+        String[] split = path[3].split(",");
+        for (String name : split) {
+          builder.add(new KijiColumnName(name));
+        }
+      }
+    }
+    mColumnNames = builder.build();
+    mColumnNamesNormalized = ImmutableSortedSet.copyOf(mColumnNames).asList();
+
+    validateNames();
+  }
+
+  /**
+   * Validates the names used in the URI.
+   *
+   * @throws KijiURIException if there is an invalid name in this URI.
+   */
+  private void validateNames() throws KijiURIException {
+    if ((mInstanceName != null) && !KijiNameValidator.isValidKijiName(mInstanceName)) {
+      throw new KijiURIException(String.format(
+          "Invalid Kiji URI: '%s' is not a valid Kiji instance name.", mInstanceName));
+    }
+    if ((mTableName != null) && !KijiNameValidator.isValidLayoutName(mTableName)) {
+      throw new KijiURIException(String.format(
+          "Invalid Kiji URI: '%s' is not a valid Kiji table name.", mTableName));
+    }
+  }
+
+  /**
+   * Private class for parsing the authority portion of a KijiURI.
+   */
+  private static class AuthorityParser {
+    private final ImmutableList<String> mZookeeperQuorum;
+    private final int mZookeeperClientPort;
+
+    /**
+     * Constructs an AuthorityParser.
+     *
+     * @param authority The authority to parse.
+     * @throws KijiURIException If the authority is invalid.
+     */
+    public AuthorityParser(String authority) throws KijiURIException {
+      if (authority.equals(ENV_URI_STRING)) {
+        final Configuration conf = HBaseConfiguration.create();
+        mZookeeperQuorum = ImmutableList.copyOf(conf.get(HConstants.ZOOKEEPER_QUORUM).split(","));
+        mZookeeperClientPort =
+            conf.getInt(HConstants.ZOOKEEPER_CLIENT_PORT, DEFAULT_ZOOKEEPER_CLIENT_PORT);
+        return;
+      }
+
+      final Matcher zkMatcher = RE_AUTHORITY_GROUP.matcher(authority);
+      if (zkMatcher.matches()) {
+        mZookeeperQuorum = ImmutableList.copyOf(zkMatcher.group(1).split(","));
+        mZookeeperClientPort = Integer.parseInt(zkMatcher.group(2));
+      } else {
+        final String[] splits = authority.split(":");
+        switch (splits.length) {
+          case 1:
+            mZookeeperQuorum = ImmutableList.copyOf(authority.split(","));
+            mZookeeperClientPort = DEFAULT_ZOOKEEPER_CLIENT_PORT;
+            break;
+          case 2:
+            if (splits[0].contains(",")) {
+              throw new KijiURIException(authority,
+                  "Multiple zookeeper hosts must be parenthesized.");
+            } else {
+              mZookeeperQuorum = ImmutableList.of(splits[0]);
+            }
+            mZookeeperClientPort = Integer.parseInt(splits[1]);
+            break;
+          default:
+            throw new KijiURIException(authority,
+                "Invalid authority, expecting 'zookeeper-quorum[:zookeeper-client-port]'");
+        }
+      }
+    }
+
+    /**
+     * Gets the zookeeper quorum.
+     *
+     * @return The zookeeper quorum.
+     */
+    public ImmutableList<String> getZookeeperQuorum() {
+      return mZookeeperQuorum;
+    }
+
+    /**
+     * Gets the zookeeper client port.
+     *
+     * @return The zookeeper client port.
+     */
+    public int getZookeeperClientPort() {
+      return mZookeeperClientPort;
+    }
+  }
+
+  /**
    * Constructs a fully qualified Kiji table URI from a string.
    *
    * @param uri Kiji URI
@@ -109,6 +273,17 @@ public final class KijiURI {
     } catch (URISyntaxException exn) {
       throw new KijiURIException(uri, exn.getMessage());
     }
+  }
+
+  /**
+   * Constructs a new KijiURI from an existing URI.
+   *
+   * @param uri The existing URI.
+   * @return The new Kiji URI.
+   * @throws KijiURIException If the URI is an invalid Kiji URI.
+   */
+  public static KijiURI fromURI(URI uri) throws KijiURIException {
+    return new KijiURI(uri);
   }
 
   /**
@@ -220,8 +395,13 @@ public final class KijiURI {
      *
      * @param instanceName The Kiji instance name.
      * @return This builder instance so you may chain configuration method calls.
+     * @throws KijiURIException if the instance name is invalid.
      */
-    public KijiURIBuilder withInstanceName(String instanceName) {
+    public KijiURIBuilder withInstanceName(String instanceName) throws KijiURIException {
+      if ((instanceName != null) && !KijiNameValidator.isValidKijiName(instanceName)) {
+        throw new KijiURIException(String.format(
+            "Invalid Kiji URI: '%s' is not a valid Kiji instance name.", instanceName));
+      }
       mInstanceName = instanceName;
       return this;
     }
@@ -231,8 +411,13 @@ public final class KijiURI {
      *
      * @param tableName The Kiji table name.
      * @return This builder instance so you may chain configuration method calls.
+     * @throws KijiURIException if the table name is invalid.
      */
-    public KijiURIBuilder withTableName(String tableName) {
+    public KijiURIBuilder withTableName(String tableName) throws KijiURIException {
+      if ((tableName != null) && !KijiNameValidator.isValidLayoutName(tableName)) {
+        throw new KijiURIException(String.format(
+            "Invalid Kiji URI: '%s' is not a valid Kiji table name.", tableName));
+      }
       mTableName = tableName;
       return this;
     }
@@ -276,170 +461,6 @@ public final class KijiURI {
           mInstanceName,
           mTableName,
           mColumnNames);
-    }
-  }
-
-  /**
-   * Constructs a URI that fully qualifies a Kiji table.
-   *
-   * @param uri Kiji URI
-   * @throws KijiURIException if the URI is invalid.
-   */
-  private KijiURI(URI uri) throws KijiURIException {
-    if (!uri.getScheme().equals(KIJI_SCHEME)) {
-      throw new KijiURIException(uri.toString(), "URI scheme must be '" + KIJI_SCHEME + "'");
-    }
-
-    final AuthorityParser parser = new AuthorityParser(uri.getAuthority());
-    mZookeeperQuorum = parser.getZookeeperQuorum();
-    mZookeeperQuorumNormalized = ImmutableSortedSet.copyOf(mZookeeperQuorum).asList();
-    mZookeeperClientPort = parser.getZookeeperClientPort();
-
-    final String[] path = new File(uri.getPath()).toString().split("/");
-    if (path.length > 4) {
-      throw new KijiURIException(uri.toString(),
-          "Invalid path, expecting '/kiji-instance/table-name/(column1, column2, ...)'");
-    }
-    Preconditions.checkState((path.length == 0) || path[0].isEmpty());
-
-    // Instance name:
-    if (path.length >= 2) {
-      mInstanceName = (path[1].equals(UNSET_URI_STRING)) ? null: path[1];
-    } else {
-      mInstanceName = null;
-    }
-
-    // Table name:
-    if (path.length >= 3) {
-      mTableName = (path[2].equals(UNSET_URI_STRING)) ? null : path[2];
-    } else {
-      mTableName = null;
-    }
-
-    // Columns:
-    final ImmutableList.Builder<KijiColumnName> builder = ImmutableList.builder();
-    if (path.length >= 4) {
-      if (!path[3].equals(UNSET_URI_STRING)) {
-        String[] split = path[3].split(",");
-        for (String name : split) {
-          builder.add(new KijiColumnName(name));
-        }
-      }
-    }
-    mColumnNames = builder.build();
-    mColumnNamesNormalized = ImmutableSortedSet.copyOf(mColumnNames).asList();
-
-    validateNames();
-  }
-
-  /**
-   * Constructs a new KijiURI with the given parameters.
-   *
-   * @param zookeeperQuorum Zookeeper quorum.
-   * @param zookeeperClientPort Zookeeper client port.
-   * @param instanceName Instance name.
-   * @param tableName Table name.
-   * @param columnNames Column names.
-   * @throws KijiURIException If the parameters are invalid.
-   */
-  private KijiURI(
-      Iterable<String> zookeeperQuorum,
-      int zookeeperClientPort,
-      String instanceName,
-      String tableName,
-      Iterable<KijiColumnName> columnNames) throws KijiURIException {
-    mZookeeperQuorum = ImmutableList.copyOf(zookeeperQuorum);
-    mZookeeperQuorumNormalized = ImmutableSortedSet.copyOf(mZookeeperQuorum).asList();
-    mZookeeperClientPort = zookeeperClientPort;
-    mInstanceName =
-        ((null == instanceName) || !instanceName.equals(UNSET_URI_STRING)) ? instanceName : null;
-    mTableName = ((null == tableName) || !tableName.equals(UNSET_URI_STRING)) ? tableName : null;
-    mColumnNames = ImmutableList.copyOf(columnNames);
-    mColumnNamesNormalized = ImmutableSortedSet.copyOf(mColumnNames).asList();
-    validateNames();
-  }
-
-  /**
-   * Validates the names used in the URI.
-   *
-   * @throws KijiURIException if there is an invalid name in this URI.
-   */
-  private void validateNames() throws KijiURIException {
-    if ((mInstanceName != null) && !KijiNameValidator.isValidKijiName(mInstanceName)) {
-      throw new KijiURIException(String.format(
-          "Invalid Kiji URI: '%s' is not a valid Kiji instance name.", mInstanceName));
-    }
-    if ((mTableName != null) && !KijiNameValidator.isValidLayoutName(mTableName)) {
-      throw new KijiURIException(String.format(
-          "Invalid Kiji URI: '%s' is not a valid Kiji table name.", mTableName));
-    }
-  }
-
-  /**
-   * Private class for parsing the authority portion of a KijiURI.
-   */
-  private static class AuthorityParser {
-    private final ImmutableList<String> mZookeeperQuorum;
-    private final int mZookeeperClientPort;
-
-    /**
-     * Constructs an AuthorityParser.
-     *
-     * @param authority The authority to parse.
-     * @throws KijiURIException If the authority is invalid.
-     */
-    public AuthorityParser(String authority) throws KijiURIException {
-      if (authority.equals(ENV_URI_STRING)) {
-        final Configuration conf = HBaseConfiguration.create();
-        mZookeeperQuorum = ImmutableList.copyOf(conf.get(HConstants.ZOOKEEPER_QUORUM).split(","));
-        mZookeeperClientPort =
-            conf.getInt(HConstants.ZOOKEEPER_CLIENT_PORT, DEFAULT_ZOOKEEPER_CLIENT_PORT);
-        return;
-      }
-
-      final Matcher zkMatcher = RE_AUTHORITY_GROUP.matcher(authority);
-      if (zkMatcher.matches()) {
-        mZookeeperQuorum = ImmutableList.copyOf(zkMatcher.group(1).split(","));
-        mZookeeperClientPort = Integer.parseInt(zkMatcher.group(2));
-      } else {
-        final String[] splits = authority.split(":");
-        switch (splits.length) {
-          case 1:
-            mZookeeperQuorum = ImmutableList.copyOf(authority.split(","));
-            mZookeeperClientPort = DEFAULT_ZOOKEEPER_CLIENT_PORT;
-            break;
-          case 2:
-            if (splits[0].contains(",")) {
-              throw new KijiURIException(authority,
-                  "Multiple zookeeper hosts must be parenthesized.");
-            } else {
-              mZookeeperQuorum = ImmutableList.of(splits[0]);
-            }
-            mZookeeperClientPort = Integer.parseInt(splits[1]);
-            break;
-          default:
-            throw new KijiURIException(authority,
-                "Invalid authority, expecting 'zookeeper-quorum[:zookeeper-client-port]'");
-        }
-      }
-    }
-
-    /**
-     * Gets the zookeeper quorum.
-     *
-     * @return The zookeeper quorum.
-     */
-    public ImmutableList<String> getZookeeperQuorum() {
-      return mZookeeperQuorum;
-    }
-
-    /**
-     * Gets the zookeeper client port.
-     *
-     * @return The zookeeper client port.
-     */
-    public int getZookeeperClientPort() {
-      return mZookeeperClientPort;
     }
   }
 
