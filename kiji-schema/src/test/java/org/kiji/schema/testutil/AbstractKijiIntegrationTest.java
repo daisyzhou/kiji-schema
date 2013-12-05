@@ -112,6 +112,9 @@ public abstract class AbstractKijiIntegrationTest {
   /** The URI to be used for running tests on the hbase-maven-plugin. */
   private static final String HBASE_MAVEN_PLUGIN_URI = "kiji://.env/";
 
+  /** Local hdfs temporary directory to use as the mapred output dir, unique for each test. */
+  private static final String MAPRED_OUTPUT_DIR = "hdfs:///tmp/" + UUID.randomUUID();
+
   private static KijiURI mHBaseURI;
 
   // -----------------------------------------------------------------------------------------------
@@ -281,6 +284,9 @@ public abstract class AbstractKijiIntegrationTest {
   @Before
   public final void setupKijiIntegrationTest() throws Exception {
     mConf = createConfiguration();
+
+    // Set the mapred.output.dir to a unique temporary directory for each test:
+    mConf.set("mapred.output.dir", MAPRED_OUTPUT_DIR);
 
     LOG.info("Setup summary for {}", getClass().getName());
     Debug.logConfiguration(mConf);
